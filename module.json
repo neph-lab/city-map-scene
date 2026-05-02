@@ -3,6 +3,9 @@
   "title": "City Map Scene",
   "description": "Scene overlay tools for city maps with level-aware and type-tag-aware locations, paths, and procedural building fills.",
   "version": "0.1.0",
+  "url": "https://github.com/Neph-lab/City-Map-Scene",
+  "manifest": "https://github.com/Neph-lab/City-Map-Scene/releases/latest/download/module.json",
+  "download": "https://github.com/Neph-lab/City-Map-Scene/releases/download/v0.1.0/city-map-scene.zip",
   "authors": [
     {
       "name": "Neph"

@@ -1,0 +1,30 @@
+{
+  "id": "city-map-scene",
+  "title": "City Map Scene",
+  "description": "Scene overlay tools for city maps with level-aware and type-tag-aware locations, paths, and procedural building fills.",
+  "version": "0.1.0",
+  "authors": [
+    {
+      "name": "Neph"
+    }
+  ],
+  "compatibility": {
+    "minimum": "14",
+    "verified": "14"
+  },
+  "esmodules": [
+    "scripts/city-map-scene.js"
+  ],
+  "styles": [
+    "styles/city-map-scene.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    }
+  ],
+  "license": "LICENSE",
+  "readme": "README.md"
+}

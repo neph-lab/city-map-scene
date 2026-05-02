@@ -1,0 +1,18 @@
+<form class="city-map-scene-manager">
+  <p>Scene city map data is stored on the active Scene as flags. Coordinates are canvas coordinates; each point may include an elevation value.</p>
+  <div class="cms-grid">
+    <section>
+      <h3>Levels JSON</h3>
+      <textarea name="levels">{{levelsJson}}</textarea>
+    </section>
+    <section>
+      <h3>Features JSON</h3>
+      <textarea name="features">{{featuresJson}}</textarea>
+    </section>
+  </div>
+  <div class="cms-actions">
+    <button type="button" data-action="seed-example">Seed Example</button>
+    <button type="button" data-action="regenerate-buildings">Regenerate Building Fills</button>
+    <button type="submit">Save</button>
+  </div>
+</form>

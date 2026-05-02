@@ -1,0 +1,11 @@
+<form class="city-map-scene-visibility">
+  {{#each tags}}
+    <label class="city-map-scene-type-toggle">
+      <span>{{label}}</span>
+      <input type="checkbox" name="{{id}}" {{{checkedAttr}}} {{{lockedAttr}}}>
+    </label>
+  {{/each}}
+  <div class="cms-actions">
+    <button type="submit">Apply</button>
+  </div>
+</form>

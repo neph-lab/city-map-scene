@@ -1,0 +1,11 @@
+{
+  "CITYMAP.Settings.TypeTags.Name": "City Map Type Tags",
+  "CITYMAP.Settings.TypeTags.Hint": "JSON array of type tags. Each entry needs an id, label, and playerMode: always, hidden, or user.",
+  "CITYMAP.Settings.PlayerVisibility.Name": "City Map Visible Types",
+  "CITYMAP.Settings.PlayerVisibility.Hint": "Per-user visibility preferences for adjustable city map type tags.",
+  "CITYMAP.Settings.Menu.Name": "Configure City Map Types",
+  "CITYMAP.Settings.Menu.Label": "City Map Types",
+  "CITYMAP.Settings.Menu.Hint": "Define the type tags available to city map scene geometry.",
+  "CITYMAP.Keybindings.OpenManager.Name": "Open City Map Manager",
+  "CITYMAP.Keybindings.OpenManager.Hint": "Open the city map geometry and level manager for the active scene."
+}

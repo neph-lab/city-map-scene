@@ -1,4 +1,6 @@
 const MODULE_ID = "city-map-scene";
+const CityMapApplication = foundry.applications.api.HandlebarsApplicationMixin(foundry.applications.api.ApplicationV2);
+
 const FLAGS = {
   FEATURES: "features",
   LEVELS: "levels"
@@ -82,6 +84,15 @@ const SAMPLE_FEATURES = [
   }
 ];
 
+const CITY_MAP_TOOLS = {
+  SELECT: "select",
+  RECTANGLE: "rectangle",
+  CIRCLE: "circle",
+  POLYGON: "polygon",
+  LINE: "line",
+  BUILDING_FILL: "buildingFill"
+};
+
 Hooks.once("init", () => {
   registerSettings();
   game.keybindings.register(MODULE_ID, "openManager", {
@@ -97,7 +108,7 @@ Hooks.once("init", () => {
     hint: "Choose which adjustable city map type tags are visible to you.",
     editable: [{ key: "KeyV", modifiers: ["CONTROL", "SHIFT"] }],
     onDown: () => {
-      new CityMapVisibility().render(true);
+      renderFoundryApp(new CityMapVisibility());
       return true;
     },
     precedence: CONST.KEYBINDING_PRECEDENCE.NORMAL
@@ -107,7 +118,7 @@ Hooks.once("init", () => {
 Hooks.once("ready", () => {
   game.cityMapScene = {
     openManager,
-    openVisibility: () => new CityMapVisibility().render(true),
+    openVisibility: () => renderFoundryApp(new CityMapVisibility()),
     refresh: () => CityMapOverlay.refresh(),
     getVisibleTypes,
     regenerateBuildingFill
@@ -121,44 +132,77 @@ Hooks.on("updateScene", (scene) => {
 });
 
 Hooks.on("getSceneControlButtons", (controls) => {
-  const tokenControls = Array.isArray(controls) ? controls.find((c) => c.name === "token") : controls.tokens;
-  if (!tokenControls?.tools) return;
-
   const visibilityTool = {
     name: "city-map-scene-visibility",
     title: "City Map Type Visibility",
     icon: "fa-solid fa-eye",
     button: true,
     visible: true,
-    onChange: () => new CityMapVisibility().render(true),
-    onClick: () => new CityMapVisibility().render(true)
+    onChange: () => renderFoundryApp(new CityMapVisibility()),
+    onClick: () => renderFoundryApp(new CityMapVisibility())
   };
-
-  const managerTool = {
-    name: "city-map-scene",
-    title: "City Map Scene",
+  const cityMapControls = {
+    name: MODULE_ID,
+    title: "City Map",
     icon: "fa-solid fa-map-location-dot",
-    button: true,
-    visible: game.user.isGM,
-    onChange: () => openManager(),
-    onClick: () => openManager()
+    order: Array.isArray(controls) ? controls.length : Object.keys(controls).length,
+    visible: true,
+    activeTool: CITY_MAP_TOOLS.SELECT,
+    onChange: (_event, active) => {
+      if (!active) CityMapDrawingTool.activate(CITY_MAP_TOOLS.SELECT);
+    },
+    tools: assignToolOrders(game.user.isGM ? getGmControlTools(visibilityTool) : [visibilityTool])
   };
 
-  if (Array.isArray(tokenControls.tools)) {
-    tokenControls.tools.push(visibilityTool);
-    if (game.user.isGM) tokenControls.tools.push(managerTool);
-  } else {
-    tokenControls.tools["city-map-scene-visibility"] = {
-      ...visibilityTool,
-      order: Object.keys(tokenControls.tools).length
-    };
-    tokenControls.tools["city-map-scene"] = {
-      ...managerTool,
-      order: Object.keys(tokenControls.tools).length,
-      visible: game.user.isGM
-    };
-  }
+  if (Array.isArray(controls)) controls.push(cityMapControls);
+  else controls[MODULE_ID] = {
+    ...cityMapControls,
+    tools: Object.fromEntries(cityMapControls.tools.map((tool, order) => [tool.name, { ...tool, order }]))
+  };
 });
+
+function getGmControlTools(visibilityTool) {
+  return [
+    {
+      name: CITY_MAP_TOOLS.SELECT,
+      title: "Select City Map Feature",
+      icon: "fa-solid fa-arrow-pointer",
+      toggle: true,
+      active: true,
+      onChange: (_event, active) => active && CityMapDrawingTool.activate(CITY_MAP_TOOLS.SELECT),
+      onClick: () => CityMapDrawingTool.activate(CITY_MAP_TOOLS.SELECT)
+    },
+    makeDrawingControl(CITY_MAP_TOOLS.RECTANGLE, "City Map Rectangle", "fa-regular fa-square"),
+    makeDrawingControl(CITY_MAP_TOOLS.CIRCLE, "City Map Circle", "fa-regular fa-circle"),
+    makeDrawingControl(CITY_MAP_TOOLS.POLYGON, "City Map Polygon", "fa-solid fa-draw-polygon"),
+    makeDrawingControl(CITY_MAP_TOOLS.LINE, "City Map Line", "fa-solid fa-route"),
+    makeDrawingControl(CITY_MAP_TOOLS.BUILDING_FILL, "City Map Building Fill", "fa-solid fa-city"),
+    {
+      name: "city-map-scene-manager",
+      title: "City Map Data Manager",
+      icon: "fa-solid fa-table-list",
+      button: true,
+      onChange: () => openManager(),
+      onClick: () => openManager()
+    },
+    visibilityTool
+  ];
+}
+
+function assignToolOrders(tools) {
+  return tools.map((tool, order) => ({ ...tool, order }));
+}
+
+function makeDrawingControl(name, title, icon) {
+  return {
+    name,
+    title,
+    icon,
+    toggle: true,
+    onChange: (_event, active) => active && CityMapDrawingTool.activate(name),
+    onClick: () => CityMapDrawingTool.activate(name)
+  };
+}
 
 function registerSettings() {
   game.settings.register(MODULE_ID, "typeTags", {
@@ -194,8 +238,12 @@ function registerSettings() {
 function openManager() {
   if (!game.user.isGM) return false;
   if (!canvas?.scene) return ui.notifications.warn("Open a Scene before editing city map data.");
-  new CityMapManager(canvas.scene).render(true);
+  renderFoundryApp(new CityMapManager(canvas.scene));
   return true;
+}
+
+function renderFoundryApp(application) {
+  return application.render({ force: true });
 }
 
 function getTypeTags() {
@@ -214,19 +262,29 @@ function getVisibleTypes() {
   }).map((tag) => tag.id));
 }
 
-class CityMapVisibility extends FormApplication {
-  static get defaultOptions() {
-    return foundry.utils.mergeObject(super.defaultOptions, {
+class CityMapVisibility extends CityMapApplication {
+  static DEFAULT_OPTIONS = {
       id: "city-map-scene-visibility",
-      title: "City Map Type Visibility",
-      template: `modules/${MODULE_ID}/templates/visibility.hbs`,
-      width: 360
-    });
-  }
+      tag: "form",
+      classes: ["city-map-scene-visibility"],
+      position: { width: 360 },
+      window: { title: "City Map Type Visibility", icon: "fa-solid fa-eye" },
+      form: {
+        closeOnSubmit: true,
+        handler: async function (_event, _form, formData) {
+          return this._onSubmit(formData.object);
+        }
+      }
+  };
 
-  getData() {
+  static PARTS = {
+    body: { template: `modules/${MODULE_ID}/templates/visibility.hbs` }
+  };
+
+  async _prepareContext(options) {
+    const context = await super._prepareContext(options);
     const preferences = game.settings.get(MODULE_ID, "playerVisibleTypes") ?? {};
-    return {
+    return foundry.utils.mergeObject(context, {
       tags: getTypeTags()
         .filter((tag) => game.user.isGM || tag.playerMode !== TYPE_MODES.HIDDEN)
         .map((tag) => ({
@@ -237,10 +295,10 @@ class CityMapVisibility extends FormApplication {
           checkedAttr: tag.playerMode === TYPE_MODES.ALWAYS || preferences[tag.id] !== false ? "checked" : "",
           lockedAttr: tag.playerMode !== TYPE_MODES.USER && !game.user.isGM ? "disabled" : ""
         }))
-    };
+    });
   }
 
-  async _updateObject(_event, formData) {
+  async _onSubmit(formData) {
     const preferences = {};
     for (const tag of getTypeTags()) {
       if (tag.playerMode === TYPE_MODES.USER || game.user.isGM) preferences[tag.id] = Boolean(formData[tag.id]);
@@ -260,6 +318,151 @@ function isFeatureVisible(feature, scene) {
   const featureLevels = Array.isArray(feature.levels) ? feature.levels : [];
   const featureTypes = Array.isArray(feature.types) ? feature.types : [];
   return featureLevels.some((level) => visibleLevels.has(level)) && featureTypes.some((type) => visibleTypes.has(type));
+}
+
+class CityMapDrawingTool {
+  static activeTool = CITY_MAP_TOOLS.SELECT;
+  static drawing = null;
+  static preview = null;
+  static listenersBound = false;
+
+  static activate(tool) {
+    if (!game.user.isGM) return;
+    this.cancel();
+    this.activeTool = tool;
+    if (tool === CITY_MAP_TOOLS.SELECT) {
+      this.detachListeners();
+      ui.notifications.info("City map select mode.");
+      return;
+    }
+    this.attachListeners();
+    ui.notifications.info(`City map ${tool} drawing mode. Press Escape to cancel.`);
+  }
+
+  static attachListeners() {
+    if (this.listenersBound || !canvas?.stage) return;
+    this.listenersBound = true;
+    canvas.stage.eventMode = "static";
+    canvas.stage.hitArea = canvas.stage.hitArea ?? canvas.app.screen;
+    canvas.stage.on("pointerdown", this.onPointerDown, this);
+    canvas.stage.on("pointermove", this.onPointerMove, this);
+    canvas.stage.on("pointerup", this.onPointerUp, this);
+    canvas.stage.on("rightdown", this.onRightDown, this);
+    canvas.stage.on("pointertap", this.onPointerTap, this);
+    window.addEventListener("keydown", this.onKeyDown);
+  }
+
+  static detachListeners() {
+    if (!this.listenersBound || !canvas?.stage) return;
+    this.listenersBound = false;
+    canvas.stage.off("pointerdown", this.onPointerDown, this);
+    canvas.stage.off("pointermove", this.onPointerMove, this);
+    canvas.stage.off("pointerup", this.onPointerUp, this);
+    canvas.stage.off("rightdown", this.onRightDown, this);
+    canvas.stage.off("pointertap", this.onPointerTap, this);
+    window.removeEventListener("keydown", this.onKeyDown);
+  }
+
+  static onPointerDown(event) {
+    if (!this.isDragTool()) return;
+    const origin = getEventPoint(event);
+    this.drawing = { origin, current: origin };
+    this.drawPreview([origin, origin], this.activeTool === CITY_MAP_TOOLS.LINE);
+  }
+
+  static onPointerMove(event) {
+    if (this.isDragTool() && this.drawing?.origin) {
+      this.drawing.current = getEventPoint(event);
+      this.drawPreview(pointsForDragTool(this.activeTool, this.drawing.origin, this.drawing.current), this.activeTool === CITY_MAP_TOOLS.LINE);
+      return;
+    }
+
+    if (!this.isVertexTool() || !this.drawing?.points?.length) return;
+    const points = [...this.drawing.points, getEventPoint(event)];
+    this.drawPreview(points, this.activeTool === CITY_MAP_TOOLS.LINE);
+  }
+
+  static async onPointerUp(event) {
+    if (!this.isDragTool() || !this.drawing?.origin) return;
+    const destination = getEventPoint(event);
+    const points = pointsForDragTool(this.activeTool, this.drawing.origin, destination);
+    this.drawing = null;
+    this.clearPreview();
+    if (!hasUsableSize(points)) return;
+    await this.createFeature(points);
+  }
+
+  static async onPointerTap(event) {
+    if (!this.isVertexTool()) return;
+    const point = getEventPoint(event);
+    const isDoubleClick = Number(event?.detail ?? event?.nativeEvent?.detail ?? 0) >= 2;
+    this.drawing ??= { points: [] };
+    if (!isDoubleClick) {
+      this.drawing.points.push(point);
+      this.drawPreview(this.drawing.points, this.activeTool === CITY_MAP_TOOLS.LINE);
+      return;
+    }
+    await this.finishVertexDrawing();
+  }
+
+  static async onRightDown(event) {
+    if (!this.isVertexTool()) return;
+    event?.stopPropagation?.();
+    await this.finishVertexDrawing();
+  }
+
+  static async finishVertexDrawing() {
+    const points = this.drawing?.points ?? [];
+    const minimum = this.activeTool === CITY_MAP_TOOLS.LINE ? 2 : 3;
+    if (points.length < minimum) return;
+    this.drawing = null;
+    this.clearPreview();
+    await this.createFeature(points);
+  }
+
+  static onKeyDown = async (event) => {
+    if (event.key === "Escape") CityMapDrawingTool.cancel();
+    if (event.key === "Enter" && CityMapDrawingTool.isVertexTool()) await CityMapDrawingTool.finishVertexDrawing();
+  };
+
+  static async createFeature(points) {
+    const feature = await createFeatureFromTool(this.activeTool, points);
+    if (!feature) return;
+    renderFoundryApp(new CityMapFeatureConfig(feature, { isNew: true }));
+  }
+
+  static isDragTool() {
+    return [CITY_MAP_TOOLS.RECTANGLE, CITY_MAP_TOOLS.CIRCLE].includes(this.activeTool);
+  }
+
+  static isVertexTool() {
+    return [CITY_MAP_TOOLS.POLYGON, CITY_MAP_TOOLS.LINE, CITY_MAP_TOOLS.BUILDING_FILL].includes(this.activeTool);
+  }
+
+  static drawPreview(points, open = false) {
+    this.clearPreview();
+    this.preview = new PIXI.Graphics();
+    this.preview.eventMode = "none";
+    this.preview.lineStyle(2, 0x00d1ff, 0.9);
+    this.preview.beginFill(0x00d1ff, open ? 0 : 0.12);
+    if (points.length) {
+      this.preview.moveTo(points[0].x, points[0].y);
+      for (const point of points.slice(1)) this.preview.lineTo(point.x, point.y);
+      if (!open && points.length > 2) this.preview.closePath();
+    }
+    this.preview.endFill();
+    canvas.stage.addChild(this.preview);
+  }
+
+  static clearPreview() {
+    this.preview?.destroy();
+    this.preview = null;
+  }
+
+  static cancel() {
+    this.drawing = null;
+    this.clearPreview();
+  }
 }
 
 class CityMapOverlay {
@@ -309,7 +512,10 @@ class CityMapOverlay {
     graphics.on("pointerover", (event) => this.showTooltip(feature, event));
     graphics.on("pointermove", (event) => this.moveTooltip(event));
     graphics.on("pointerout", () => this.hideTooltip());
-    graphics.on("pointertap", () => openJournal(feature));
+    graphics.on("pointertap", () => {
+      if (game.user.isGM && CityMapDrawingTool.activeTool === CITY_MAP_TOOLS.SELECT) renderFoundryApp(new CityMapFeatureConfig(feature));
+      else openJournal(feature);
+    });
     this.container.addChild(graphics);
     return graphics;
   }
@@ -382,7 +588,7 @@ function drawPolygon(graphics, feature, internal = false) {
 
 function openJournal(feature) {
   if (!feature.journalUuid) return;
-  fromUuid(feature.journalUuid).then((document) => document?.sheet?.render(true));
+  fromUuid(feature.journalUuid).then((document) => document?.sheet && renderFoundryApp(document.sheet));
 }
 
 function colorNumber(color) {
@@ -481,80 +687,338 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-class CityMapTypeConfig extends FormApplication {
-  static get defaultOptions() {
-    return foundry.utils.mergeObject(super.defaultOptions, {
-      id: "city-map-scene-type-config",
-      title: "City Map Types",
-      template: `modules/${MODULE_ID}/templates/type-config.hbs`,
-      width: 620
-    });
-  }
+function getEventPoint(event) {
+  const local = event?.getLocalPosition?.(canvas.stage)
+    ?? event?.data?.getLocalPosition?.(canvas.stage)
+    ?? canvas.stage.toLocal(event?.global ?? event?.data?.global ?? { x: 0, y: 0 });
+  return {
+    x: Math.round(local.x),
+    y: Math.round(local.y),
+    elevation: 0
+  };
+}
 
-  getData() {
+function pointsForDragTool(tool, origin, destination) {
+  if (tool === CITY_MAP_TOOLS.CIRCLE) return circlePoints(origin, destination);
+  return rectangleFromCorners(origin, destination);
+}
+
+function rectangleFromCorners(a, b) {
+  return [
+    { x: a.x, y: a.y, elevation: 0 },
+    { x: b.x, y: a.y, elevation: 0 },
+    { x: b.x, y: b.y, elevation: 0 },
+    { x: a.x, y: b.y, elevation: 0 }
+  ];
+}
+
+function circlePoints(origin, destination) {
+  const radius = Math.hypot(destination.x - origin.x, destination.y - origin.y);
+  const segments = 32;
+  return Array.from({ length: segments }, (_value, index) => {
+    const angle = (Math.PI * 2 * index) / segments;
     return {
-      typeTagsJson: JSON.stringify(getTypeTags(), null, 2)
+      x: Math.round(origin.x + Math.cos(angle) * radius),
+      y: Math.round(origin.y + Math.sin(angle) * radius),
+      elevation: 0
     };
+  });
+}
+
+function hasUsableSize(points) {
+  const bounds = polygonBounds(points);
+  return (bounds.maxX - bounds.minX) >= 8 || (bounds.maxY - bounds.minY) >= 8;
+}
+
+async function createFeatureFromTool(tool, points) {
+  if (!canvas?.scene) return null;
+  await ensureSceneLevels(canvas.scene);
+  const levels = canvas.scene.getFlag(MODULE_ID, FLAGS.LEVELS) ?? SAMPLE_LEVELS;
+  const typeTags = getTypeTags();
+  const type = typeTags.find((tag) => tag.playerMode !== TYPE_MODES.HIDDEN) ?? typeTags[0];
+  const base = {
+    id: foundry.utils.randomID(),
+    name: defaultFeatureName(tool),
+    description: "",
+    journalUuid: "",
+    levels: [levels[0]?.id ?? "ground"],
+    types: [type?.id ?? "streetmap"],
+    stroke: type?.color ?? "#ffffff",
+    width: tool === CITY_MAP_TOOLS.LINE ? 5 : 2,
+    points
+  };
+
+  if (tool === CITY_MAP_TOOLS.LINE) return { ...base, kind: "path", fill: "" };
+  if (tool === CITY_MAP_TOOLS.BUILDING_FILL) {
+    const feature = {
+      ...base,
+      kind: "buildingFill",
+      fill: "#6d806888",
+      buildingFill: {
+        seed: Math.floor(Math.random() * 1_000_000),
+        fillPercent: 0.65,
+        averageSize: 72,
+        sizeVariation: 0.3,
+        irregularity: 0.25,
+        baseElevation: 0,
+        averageTopElevation: 18,
+        topElevationVariation: 8
+      }
+    };
+    feature.buildings = regenerateBuildingFill(feature);
+    return feature;
+  }
+  return {
+    ...base,
+    kind: "polygon",
+    shapeType: tool,
+    fill: `${type?.color ?? "#ffffff"}66`
+  };
+}
+
+function defaultFeatureName(tool) {
+  const labels = {
+    [CITY_MAP_TOOLS.RECTANGLE]: "New Rectangle",
+    [CITY_MAP_TOOLS.CIRCLE]: "New Circle",
+    [CITY_MAP_TOOLS.POLYGON]: "New Polygon",
+    [CITY_MAP_TOOLS.LINE]: "New Line",
+    [CITY_MAP_TOOLS.BUILDING_FILL]: "New Building Fill"
+  };
+  return labels[tool] ?? "New City Map Feature";
+}
+
+async function ensureSceneLevels(scene) {
+  const levels = scene.getFlag(MODULE_ID, FLAGS.LEVELS);
+  if (Array.isArray(levels) && levels.length) return;
+  await scene.setFlag(MODULE_ID, FLAGS.LEVELS, [{ id: "ground", label: "Ground", visible: true, elevation: 0 }]);
+}
+
+async function saveFeature(feature) {
+  const scene = canvas.scene;
+  const features = foundry.utils.deepClone(scene.getFlag(MODULE_ID, FLAGS.FEATURES) ?? []);
+  const index = features.findIndex((existing) => existing.id === feature.id);
+  if (index >= 0) features[index] = feature;
+  else features.push(feature);
+  await scene.setFlag(MODULE_ID, FLAGS.FEATURES, features);
+  CityMapOverlay.refresh();
+}
+
+class CityMapFeatureConfig extends CityMapApplication {
+  constructor(feature, options = {}) {
+    super(options);
+    this.feature = foundry.utils.deepClone(feature);
+    this.isNew = Boolean(options.isNew);
   }
 
-  activateListeners(html) {
-    super.activateListeners(html);
-    html.find("[data-action='defaults']").on("click", () => {
-      html.find("textarea[name='typeTags']").val(JSON.stringify(DEFAULT_TYPE_TAGS, null, 2));
+  static DEFAULT_OPTIONS = {
+      id: "city-map-scene-feature-config",
+      tag: "form",
+      classes: ["city-map-scene-feature-config"],
+      position: { width: 560 },
+      window: { title: "City Map Feature", icon: "fa-solid fa-map-pin", resizable: true },
+      form: {
+        closeOnSubmit: true,
+        handler: async function (_event, _form, formData) {
+          return this._onSubmit(formData.object);
+        }
+      }
+  };
+
+  static PARTS = {
+    body: { template: `modules/${MODULE_ID}/templates/feature-config.hbs` }
+  };
+
+  static TABS = {
+    primary: {
+      tabs: [
+        { id: "details", icon: "fa-solid fa-pen", label: "Details" },
+        { id: "visibility", icon: "fa-solid fa-eye", label: "Visibility" },
+        { id: "geometry", icon: "fa-solid fa-draw-polygon", label: "Geometry" },
+        { id: "building", icon: "fa-solid fa-city", label: "Building Fill" }
+      ],
+      initial: "details"
+    }
+  };
+
+  async _prepareContext(options) {
+    const context = await super._prepareContext(options);
+    const sceneLevels = canvas.scene.getFlag(MODULE_ID, FLAGS.LEVELS) ?? [];
+    const selectedLevels = new Set(this.feature.levels ?? []);
+    const selectedTypes = new Set(this.feature.types ?? []);
+    const elevation = Number(this.feature.points?.[0]?.elevation ?? this.feature.buildingFill?.baseElevation ?? 0);
+    return foundry.utils.mergeObject(context, {
+      feature: this.feature,
+      isPath: this.feature.kind === "path",
+      isBuildingFill: this.feature.kind === "buildingFill",
+      elevation,
+      pointsJson: JSON.stringify(this.feature.points ?? [], null, 2),
+      levels: sceneLevels.map((level) => ({
+        ...level,
+        checkedAttr: selectedLevels.has(level.id) ? "checked" : ""
+      })),
+      typeTags: getTypeTags().map((tag) => ({
+        ...tag,
+          checkedAttr: selectedTypes.has(tag.id) ? "checked" : ""
+      }))
     });
   }
 
-  async _updateObject(_event, formData) {
+  async _onRender(context, options) {
+    await super._onRender(context, options);
+    this.element.querySelector("[data-action='regenerate-buildings']")?.addEventListener("click", () => {
+      const feature = this.collectFeature(this.element);
+      feature.buildingFill.seed = Math.floor(Math.random() * 1_000_000);
+      feature.buildings = regenerateBuildingFill(feature);
+      this.feature = feature;
+      this.render({ force: true });
+    });
+  }
+
+  collectFeature(form) {
+    return this.featureFromData(formObjectFromElement(form));
+  }
+
+  async _onSubmit(formData) {
+    const feature = this.featureFromData(formData);
+    await saveFeature(feature);
+  }
+
+  featureFromData(data) {
+    const elevation = Number(data.elevation ?? 0);
+    const feature = foundry.utils.deepClone(this.feature);
+    feature.name = data.name?.trim() || "Unnamed City Map Feature";
+    feature.description = data.description?.trim() ?? "";
+    feature.journalUuid = data.journalUuid?.trim() ?? "";
+    feature.stroke = data.stroke || feature.stroke || "#ffffff";
+    feature.width = Number(data.width ?? feature.width ?? 2);
+    if (feature.kind !== "path") feature.fill = data.fill || feature.fill || "#ffffff66";
+    feature.points = parseJson(data.points, "points").map((point) => ({
+      x: Number(point.x),
+      y: Number(point.y),
+      elevation
+    }));
+    feature.levels = Object.entries(data.level ?? {}).filter(([_id, enabled]) => enabled).map(([id]) => id);
+    feature.types = Object.entries(data.type ?? {}).filter(([_id, enabled]) => enabled).map(([id]) => id);
+
+    if (feature.kind === "buildingFill") {
+      feature.buildingFill = {
+        seed: Number(data.buildingFill?.seed ?? feature.buildingFill?.seed ?? 1),
+        fillPercent: Number(data.buildingFill?.fillPercent ?? feature.buildingFill?.fillPercent ?? 0.65),
+        averageSize: Number(data.buildingFill?.averageSize ?? feature.buildingFill?.averageSize ?? 72),
+        sizeVariation: Number(data.buildingFill?.sizeVariation ?? feature.buildingFill?.sizeVariation ?? 0.3),
+        irregularity: Number(data.buildingFill?.irregularity ?? feature.buildingFill?.irregularity ?? 0.25),
+        baseElevation: Number(data.buildingFill?.baseElevation ?? elevation),
+        averageTopElevation: Number(data.buildingFill?.averageTopElevation ?? feature.buildingFill?.averageTopElevation ?? 18),
+        topElevationVariation: Number(data.buildingFill?.topElevationVariation ?? feature.buildingFill?.topElevationVariation ?? 8)
+      };
+      feature.buildings = regenerateBuildingFill(feature);
+    }
+    return feature;
+  }
+}
+
+function formObjectFromElement(form) {
+  const data = {};
+  for (const element of form.elements) {
+    if (!element.name || element.disabled) continue;
+    if (element.type === "checkbox") data[element.name] = element.checked;
+    else data[element.name] = element.value;
+  }
+  return foundry.utils.expandObject(data);
+}
+
+class CityMapTypeConfig extends CityMapApplication {
+  static DEFAULT_OPTIONS = {
+      id: "city-map-scene-type-config",
+      tag: "form",
+      classes: ["city-map-scene-type-config"],
+      position: { width: 620 },
+      window: { title: "City Map Types", icon: "fas fa-tags" },
+      form: {
+        closeOnSubmit: true,
+        handler: async function (_event, _form, formData) {
+          return this._onSubmit(formData.object);
+        }
+      }
+  };
+
+  static PARTS = {
+    body: { template: `modules/${MODULE_ID}/templates/type-config.hbs` }
+  };
+
+  async _prepareContext(options) {
+    const context = await super._prepareContext(options);
+    return foundry.utils.mergeObject(context, {
+      typeTagsJson: JSON.stringify(getTypeTags(), null, 2)
+    });
+  }
+
+  async _onRender(context, options) {
+    await super._onRender(context, options);
+    this.element.querySelector("[data-action='defaults']")?.addEventListener("click", () => {
+      this.element.querySelector("textarea[name='typeTags']").value = JSON.stringify(DEFAULT_TYPE_TAGS, null, 2);
+    });
+  }
+
+  async _onSubmit(formData) {
     const typeTags = parseJson(formData.typeTags, "type tags");
     validateTypeTags(typeTags);
     await game.settings.set(MODULE_ID, "typeTags", typeTags);
   }
 }
 
-class CityMapManager extends FormApplication {
+class CityMapManager extends CityMapApplication {
   constructor(scene, options = {}) {
-    super(scene, options);
+    super(options);
     this.scene = scene;
   }
 
-  static get defaultOptions() {
-    return foundry.utils.mergeObject(super.defaultOptions, {
+  static DEFAULT_OPTIONS = {
       id: "city-map-scene-manager",
-      title: "City Map Scene",
-      template: `modules/${MODULE_ID}/templates/manager.hbs`,
-      width: 900,
-      height: "auto",
-      resizable: true
-    });
-  }
+      tag: "form",
+      classes: ["city-map-scene-manager"],
+      position: { width: 900 },
+      window: { title: "City Map Scene", icon: "fa-solid fa-map-location-dot", resizable: true },
+      form: {
+        closeOnSubmit: true,
+        handler: async function (_event, _form, formData) {
+          return this._onSubmit(formData.object);
+        }
+      }
+  };
 
-  getData() {
-    return {
+  static PARTS = {
+    body: { template: `modules/${MODULE_ID}/templates/manager.hbs` }
+  };
+
+  async _prepareContext(options) {
+    const context = await super._prepareContext(options);
+    return foundry.utils.mergeObject(context, {
       levelsJson: JSON.stringify(this.scene.getFlag(MODULE_ID, FLAGS.LEVELS) ?? SAMPLE_LEVELS, null, 2),
       featuresJson: JSON.stringify(this.scene.getFlag(MODULE_ID, FLAGS.FEATURES) ?? [], null, 2)
-    };
+    });
   }
 
-  activateListeners(html) {
-    super.activateListeners(html);
-    html.find("[data-action='seed-example']").on("click", () => {
-      html.find("textarea[name='levels']").val(JSON.stringify(SAMPLE_LEVELS, null, 2));
-      html.find("textarea[name='features']").val(JSON.stringify(SAMPLE_FEATURES, null, 2));
+  async _onRender(context, options) {
+    await super._onRender(context, options);
+    this.element.querySelector("[data-action='seed-example']")?.addEventListener("click", () => {
+      this.element.querySelector("textarea[name='levels']").value = JSON.stringify(SAMPLE_LEVELS, null, 2);
+      this.element.querySelector("textarea[name='features']").value = JSON.stringify(SAMPLE_FEATURES, null, 2);
     });
-    html.find("[data-action='regenerate-buildings']").on("click", () => {
-      const features = parseJson(html.find("textarea[name='features']").val(), "features");
+    this.element.querySelector("[data-action='regenerate-buildings']")?.addEventListener("click", () => {
+      const features = parseJson(this.element.querySelector("textarea[name='features']").value, "features");
       for (const feature of features) {
         if (feature.kind !== "buildingFill") continue;
         feature.buildingFill ??= {};
         feature.buildingFill.seed = Math.floor(Math.random() * 1_000_000);
         feature.buildings = regenerateBuildingFill(feature);
       }
-      html.find("textarea[name='features']").val(JSON.stringify(features, null, 2));
+      this.element.querySelector("textarea[name='features']").value = JSON.stringify(features, null, 2);
       CityMapOverlay.refresh();
     });
   }
 
-  async _updateObject(_event, formData) {
+  async _onSubmit(formData) {
     const levels = parseJson(formData.levels, "levels");
     const features = parseJson(formData.features, "features");
     validateLevels(levels);

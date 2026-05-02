@@ -30,14 +30,17 @@ The module follows Foundry's module manifest structure: `module.json` loads `scr
 
 GM tools:
 
-- Scene controls: click **City Map Scene** from the token controls, or press `Ctrl+Shift+M`.
+- Scene controls: use the **City Map** control category in the left-side controls.
+- Drawing tools: rectangle, circle, polygon, line, and building fill create module-owned city map features, not Foundry Drawing documents.
+- Select tool: click an existing city map feature to edit its details, visibility, geometry, and building-fill settings.
+- Data manager: open the JSON manager from the City Map controls, or press `Ctrl+Shift+M`.
 - Configure type tags from Foundry's module settings menu.
 - In the manager, edit Scene levels and features as JSON. Use **Seed Example** to create sample data.
 - Use **Regenerate Building Fills** after changing building-fill controls to create a new stored set of internal polygons.
 
 Player tools:
 
-- Scene controls: click **City Map Type Visibility**, or press `Ctrl+Shift+V`.
+- Scene controls: players only see **City Map Type Visibility**, or can press `Ctrl+Shift+V`.
 - Players can only toggle type tags configured with `playerMode: "user"`.
 
 ## Feature Data Shape

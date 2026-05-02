@@ -1,0 +1,113 @@
+<section>
+  <nav class="tabs" data-group="primary">
+    <a class="item" data-tab="details">Details</a>
+    <a class="item" data-tab="visibility">Visibility</a>
+    <a class="item" data-tab="geometry">Geometry</a>
+    {{#if isBuildingFill}}<a class="item" data-tab="building">Building Fill</a>{{/if}}
+  </nav>
+
+  <section class="content">
+    <div class="tab" data-group="primary" data-tab="details">
+      <label>
+        Name
+        <input type="text" name="name" value="{{feature.name}}">
+      </label>
+      <label>
+        Short Description
+        <input type="text" name="description" value="{{feature.description}}">
+      </label>
+      <label>
+        Journal UUID
+        <input type="text" name="journalUuid" value="{{feature.journalUuid}}">
+      </label>
+    </div>
+
+    <div class="tab" data-group="primary" data-tab="visibility">
+      <h3>Levels</h3>
+      {{#each levels}}
+        <label class="city-map-scene-type-toggle">
+          <span>{{label}}</span>
+          <input type="checkbox" name="level.{{id}}" {{{checkedAttr}}}>
+        </label>
+      {{/each}}
+      <h3>Type Tags</h3>
+      {{#each typeTags}}
+        <label class="city-map-scene-type-toggle">
+          <span>{{label}}</span>
+          <input type="checkbox" name="type.{{id}}" {{{checkedAttr}}}>
+        </label>
+      {{/each}}
+    </div>
+
+    <div class="tab" data-group="primary" data-tab="geometry">
+      <div class="cms-field-grid">
+        <label>
+          Stroke
+          <input type="text" name="stroke" value="{{feature.stroke}}">
+        </label>
+        {{#unless isPath}}
+          <label>
+            Fill
+            <input type="text" name="fill" value="{{feature.fill}}">
+          </label>
+        {{/unless}}
+        <label>
+          Width
+          <input type="number" name="width" value="{{feature.width}}" min="1" step="1">
+        </label>
+        <label>
+          Elevation
+          <input type="number" name="elevation" value="{{elevation}}" step="1">
+        </label>
+      </div>
+      <label>
+        Points JSON
+        <textarea name="points">{{pointsJson}}</textarea>
+      </label>
+    </div>
+
+    {{#if isBuildingFill}}
+      <div class="tab" data-group="primary" data-tab="building">
+        <div class="cms-field-grid">
+          <label>
+            Seed
+            <input type="number" name="buildingFill.seed" value="{{feature.buildingFill.seed}}" step="1">
+          </label>
+          <label>
+            Fill Percent
+            <input type="range" name="buildingFill.fillPercent" value="{{feature.buildingFill.fillPercent}}" min="0" max="1" step="0.01">
+          </label>
+          <label>
+            Average Size
+            <input type="range" name="buildingFill.averageSize" value="{{feature.buildingFill.averageSize}}" min="10" max="300" step="1">
+          </label>
+          <label>
+            Size Variation
+            <input type="range" name="buildingFill.sizeVariation" value="{{feature.buildingFill.sizeVariation}}" min="0" max="1" step="0.01">
+          </label>
+          <label>
+            Irregularity
+            <input type="range" name="buildingFill.irregularity" value="{{feature.buildingFill.irregularity}}" min="0" max="1" step="0.01">
+          </label>
+          <label>
+            Base Elevation
+            <input type="number" name="buildingFill.baseElevation" value="{{feature.buildingFill.baseElevation}}" step="1">
+          </label>
+          <label>
+            Average Top Elevation
+            <input type="number" name="buildingFill.averageTopElevation" value="{{feature.buildingFill.averageTopElevation}}" step="1">
+          </label>
+          <label>
+            Top Elevation Variation
+            <input type="number" name="buildingFill.topElevationVariation" value="{{feature.buildingFill.topElevationVariation}}" step="1">
+          </label>
+        </div>
+        <button type="button" data-action="regenerate-buildings">Regenerate Internal Shapes</button>
+      </div>
+    {{/if}}
+  </section>
+
+  <div class="cms-actions">
+    <button type="submit">Save</button>
+  </div>
+</section>

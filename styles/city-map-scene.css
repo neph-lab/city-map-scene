@@ -1,5 +1,6 @@
 .city-map-scene-manager textarea,
-.city-map-scene-type-config textarea {
+.city-map-scene-type-config textarea,
+.city-map-scene-feature-config textarea {
   min-height: 18rem;
   font-family: var(--font-monospace, monospace);
   font-size: 0.85rem;
@@ -13,11 +14,37 @@
 
 .city-map-scene-manager .cms-actions,
 .city-map-scene-type-config .cms-actions,
-.city-map-scene-visibility .cms-actions {
+.city-map-scene-visibility .cms-actions,
+.city-map-scene-feature-config .cms-actions {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
   margin-top: 0.75rem;
+}
+
+.city-map-scene-feature-config .tabs {
+  margin-bottom: 0.75rem;
+}
+
+.city-map-scene-feature-config label {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.city-map-scene-feature-config input[type="text"],
+.city-map-scene-feature-config input[type="number"],
+.city-map-scene-feature-config textarea {
+  width: 100%;
+}
+
+.city-map-scene-feature-config textarea {
+  min-height: 12rem;
+}
+
+.city-map-scene-feature-config .cms-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem 0.75rem;
 }
 
 .city-map-scene-tooltip {

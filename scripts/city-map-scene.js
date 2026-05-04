@@ -3,7 +3,8 @@ const CityMapApplication = foundry.applications.api.HandlebarsApplicationMixin(f
 
 const FLAGS = {
   FEATURES: "features",
-  LEVELS: "levels"
+  LEVELS: "levels",
+  IS_CITY_MAP: "isCityMap"
 };
 
 const TYPE_MODES = {
@@ -108,8 +109,7 @@ Hooks.once("init", () => {
     hint: "Choose which adjustable city map type tags are visible to you.",
     editable: [{ key: "KeyV", modifiers: ["CONTROL", "SHIFT"] }],
     onDown: () => {
-      renderFoundryApp(new CityMapVisibility());
-      return true;
+      return openVisibility();
     },
     precedence: CONST.KEYBINDING_PRECEDENCE.NORMAL
   });
@@ -118,7 +118,7 @@ Hooks.once("init", () => {
 Hooks.once("ready", () => {
   game.cityMapScene = {
     openManager,
-    openVisibility: () => renderFoundryApp(new CityMapVisibility()),
+    openVisibility,
     refresh: () => CityMapOverlay.refresh(),
     getVisibleTypes,
     regenerateBuildingFill
@@ -128,18 +128,22 @@ Hooks.once("ready", () => {
 Hooks.on("canvasReady", () => CityMapOverlay.refresh());
 Hooks.on("canvasPan", () => CityMapOverlay.refresh());
 Hooks.on("updateScene", (scene) => {
-  if (scene.id === canvas?.scene?.id) CityMapOverlay.refresh();
+  if (scene.id !== canvas?.scene?.id) return;
+  if (!isCityMapScene(scene)) CityMapDrawingTool.deactivate();
+  CityMapOverlay.refresh();
+  refreshSceneControls();
 });
 
 Hooks.on("getSceneControlButtons", (controls) => {
+  if (!isCityMapScene(canvas?.scene)) return;
   const visibilityTool = {
     name: "city-map-scene-visibility",
     title: "City Map Type Visibility",
     icon: "fa-solid fa-eye",
     button: true,
     visible: true,
-    onChange: () => renderFoundryApp(new CityMapVisibility()),
-    onClick: () => renderFoundryApp(new CityMapVisibility())
+    onChange: () => openVisibility(),
+    onClick: () => openVisibility()
   };
   const cityMapControls = {
     name: MODULE_ID,
@@ -151,6 +155,9 @@ Hooks.on("getSceneControlButtons", (controls) => {
     onChange: (_event, active) => {
       if (!active) CityMapDrawingTool.activate(CITY_MAP_TOOLS.SELECT);
     },
+    onToolChange: (_event, tool, active) => {
+      if (active && !tool.button) CityMapDrawingTool.activate(tool.name);
+    },
     tools: assignToolOrders(game.user.isGM ? getGmControlTools(visibilityTool) : [visibilityTool])
   };
 
@@ -161,13 +168,16 @@ Hooks.on("getSceneControlButtons", (controls) => {
   };
 });
 
+Hooks.on("renderSceneConfig", (application, element) => {
+  injectSceneConfigCityMapFlag(application, element);
+});
+
 function getGmControlTools(visibilityTool) {
   return [
     {
       name: CITY_MAP_TOOLS.SELECT,
       title: "Select City Map Feature",
       icon: "fa-solid fa-arrow-pointer",
-      toggle: true,
       active: true,
       onChange: (_event, active) => active && CityMapDrawingTool.activate(CITY_MAP_TOOLS.SELECT),
       onClick: () => CityMapDrawingTool.activate(CITY_MAP_TOOLS.SELECT)
@@ -177,14 +187,6 @@ function getGmControlTools(visibilityTool) {
     makeDrawingControl(CITY_MAP_TOOLS.POLYGON, "City Map Polygon", "fa-solid fa-draw-polygon"),
     makeDrawingControl(CITY_MAP_TOOLS.LINE, "City Map Line", "fa-solid fa-route"),
     makeDrawingControl(CITY_MAP_TOOLS.BUILDING_FILL, "City Map Building Fill", "fa-solid fa-city"),
-    {
-      name: "city-map-scene-manager",
-      title: "City Map Data Manager",
-      icon: "fa-solid fa-table-list",
-      button: true,
-      onChange: () => openManager(),
-      onClick: () => openManager()
-    },
     visibilityTool
   ];
 }
@@ -198,10 +200,50 @@ function makeDrawingControl(name, title, icon) {
     name,
     title,
     icon,
-    toggle: true,
     onChange: (_event, active) => active && CityMapDrawingTool.activate(name),
     onClick: () => CityMapDrawingTool.activate(name)
   };
+}
+
+function isCityMapScene(scene = canvas?.scene) {
+  return scene?.getFlag(MODULE_ID, FLAGS.IS_CITY_MAP) === true;
+}
+
+function injectSceneConfigCityMapFlag(application, element) {
+  const scene = application.document;
+  if (scene?.documentName !== "Scene" || element.querySelector(".city-map-scene-config-field")) return;
+
+  const field = document.createElement("div");
+  field.className = "form-group city-map-scene-config-field";
+  field.innerHTML = `
+    <label>City Map Scene</label>
+    <div class="form-fields">
+      <input type="checkbox" name="flags.${MODULE_ID}.${FLAGS.IS_CITY_MAP}" value="true">
+    </div>
+    <p class="hint">Enable City Map Scene controls and overlay data for this Scene.</p>
+  `;
+  const checkbox = field.querySelector("input");
+  checkbox.checked = isCityMapScene(scene);
+
+  const target = element.querySelector('[data-tab="basic"]')
+    ?? element.querySelector('[data-tab="basics"]')
+    ?? element.querySelector(".tab")
+    ?? element;
+  target.append(field);
+
+  const form = element.closest("form") ?? element.querySelector("form");
+  checkbox.addEventListener("change", async () => {
+    await scene.setFlag(MODULE_ID, FLAGS.IS_CITY_MAP, checkbox.checked);
+    refreshSceneControls();
+  });
+  form?.addEventListener("submit", async () => {
+    await scene.setFlag(MODULE_ID, FLAGS.IS_CITY_MAP, checkbox.checked);
+    refreshSceneControls();
+  }, { once: true });
+}
+
+function refreshSceneControls() {
+  ui.controls?.render?.({ reset: true });
 }
 
 function registerSettings() {
@@ -238,7 +280,14 @@ function registerSettings() {
 function openManager() {
   if (!game.user.isGM) return false;
   if (!canvas?.scene) return ui.notifications.warn("Open a Scene before editing city map data.");
+  if (!isCityMapScene()) return ui.notifications.warn("Enable City Map Scene in this Scene's configuration first.");
   renderFoundryApp(new CityMapManager(canvas.scene));
+  return true;
+}
+
+function openVisibility() {
+  if (!isCityMapScene()) return false;
+  renderFoundryApp(new CityMapVisibility());
   return true;
 }
 
@@ -325,6 +374,7 @@ class CityMapDrawingTool {
   static drawing = null;
   static preview = null;
   static listenersBound = false;
+  static view = null;
 
   static activate(tool) {
     if (!game.user.isGM) return;
@@ -340,75 +390,100 @@ class CityMapDrawingTool {
   }
 
   static attachListeners() {
-    if (this.listenersBound || !canvas?.stage) return;
+    const view = getCanvasView();
+    if (this.listenersBound || !view) return;
     this.listenersBound = true;
-    canvas.stage.eventMode = "static";
-    canvas.stage.hitArea = canvas.stage.hitArea ?? canvas.app.screen;
-    canvas.stage.on("pointerdown", this.onPointerDown, this);
-    canvas.stage.on("pointermove", this.onPointerMove, this);
-    canvas.stage.on("pointerup", this.onPointerUp, this);
-    canvas.stage.on("rightdown", this.onRightDown, this);
-    canvas.stage.on("pointertap", this.onPointerTap, this);
+    this.view = view;
+    view.addEventListener("pointerdown", this.onPointerDown, true);
+    view.addEventListener("pointermove", this.onPointerMove, true);
+    view.addEventListener("pointerup", this.onPointerUp, true);
+    view.addEventListener("click", this.onClick, true);
+    view.addEventListener("dblclick", this.onDoubleClick, true);
+    view.addEventListener("contextmenu", this.onContextMenu, true);
     window.addEventListener("keydown", this.onKeyDown);
   }
 
   static detachListeners() {
-    if (!this.listenersBound || !canvas?.stage) return;
+    if (!this.listenersBound) return;
     this.listenersBound = false;
-    canvas.stage.off("pointerdown", this.onPointerDown, this);
-    canvas.stage.off("pointermove", this.onPointerMove, this);
-    canvas.stage.off("pointerup", this.onPointerUp, this);
-    canvas.stage.off("rightdown", this.onRightDown, this);
-    canvas.stage.off("pointertap", this.onPointerTap, this);
+    this.view?.removeEventListener("pointerdown", this.onPointerDown, true);
+    this.view?.removeEventListener("pointermove", this.onPointerMove, true);
+    this.view?.removeEventListener("pointerup", this.onPointerUp, true);
+    this.view?.removeEventListener("click", this.onClick, true);
+    this.view?.removeEventListener("dblclick", this.onDoubleClick, true);
+    this.view?.removeEventListener("contextmenu", this.onContextMenu, true);
+    this.view = null;
     window.removeEventListener("keydown", this.onKeyDown);
   }
 
   static onPointerDown(event) {
-    if (!this.isDragTool()) return;
+    if (!CityMapDrawingTool.isReadyForCanvasEvent(event)) return;
+    if (CityMapDrawingTool.isVertexTool()) {
+      CityMapDrawingTool.consumeCanvasEvent(event);
+      return;
+    }
+    if (!CityMapDrawingTool.isDragTool()) return;
+    CityMapDrawingTool.consumeCanvasEvent(event);
     const origin = getEventPoint(event);
-    this.drawing = { origin, current: origin };
-    this.drawPreview([origin, origin], this.activeTool === CITY_MAP_TOOLS.LINE);
+    CityMapDrawingTool.drawing = { origin, current: origin };
+    CityMapDrawingTool.drawPreview([origin, origin], CityMapDrawingTool.activeTool === CITY_MAP_TOOLS.LINE);
   }
 
   static onPointerMove(event) {
-    if (this.isDragTool() && this.drawing?.origin) {
-      this.drawing.current = getEventPoint(event);
-      this.drawPreview(pointsForDragTool(this.activeTool, this.drawing.origin, this.drawing.current), this.activeTool === CITY_MAP_TOOLS.LINE);
+    if (!CityMapDrawingTool.isReadyForCanvasEvent(event, false)) return;
+    if (CityMapDrawingTool.isDragTool() && CityMapDrawingTool.drawing?.origin) {
+      CityMapDrawingTool.consumeCanvasEvent(event);
+      CityMapDrawingTool.drawing.current = getEventPoint(event);
+      CityMapDrawingTool.drawPreview(
+        pointsForDragTool(CityMapDrawingTool.activeTool, CityMapDrawingTool.drawing.origin, CityMapDrawingTool.drawing.current),
+        CityMapDrawingTool.activeTool === CITY_MAP_TOOLS.LINE
+      );
       return;
     }
 
-    if (!this.isVertexTool() || !this.drawing?.points?.length) return;
-    const points = [...this.drawing.points, getEventPoint(event)];
-    this.drawPreview(points, this.activeTool === CITY_MAP_TOOLS.LINE);
+    if (!CityMapDrawingTool.isVertexTool() || !CityMapDrawingTool.drawing?.points?.length) return;
+    const points = [...CityMapDrawingTool.drawing.points, getEventPoint(event)];
+    CityMapDrawingTool.drawPreview(points, CityMapDrawingTool.activeTool === CITY_MAP_TOOLS.LINE);
   }
 
   static async onPointerUp(event) {
-    if (!this.isDragTool() || !this.drawing?.origin) return;
-    const destination = getEventPoint(event);
-    const points = pointsForDragTool(this.activeTool, this.drawing.origin, destination);
-    this.drawing = null;
-    this.clearPreview();
-    if (!hasUsableSize(points)) return;
-    await this.createFeature(points);
-  }
-
-  static async onPointerTap(event) {
-    if (!this.isVertexTool()) return;
-    const point = getEventPoint(event);
-    const isDoubleClick = Number(event?.detail ?? event?.nativeEvent?.detail ?? 0) >= 2;
-    this.drawing ??= { points: [] };
-    if (!isDoubleClick) {
-      this.drawing.points.push(point);
-      this.drawPreview(this.drawing.points, this.activeTool === CITY_MAP_TOOLS.LINE);
+    if (!CityMapDrawingTool.isReadyForCanvasEvent(event)) return;
+    if (CityMapDrawingTool.isVertexTool()) {
+      CityMapDrawingTool.consumeCanvasEvent(event);
       return;
     }
-    await this.finishVertexDrawing();
+    if (!CityMapDrawingTool.isDragTool() || !CityMapDrawingTool.drawing?.origin) return;
+    CityMapDrawingTool.consumeCanvasEvent(event);
+    const destination = getEventPoint(event);
+    const points = pointsForDragTool(CityMapDrawingTool.activeTool, CityMapDrawingTool.drawing.origin, destination);
+    CityMapDrawingTool.drawing = null;
+    CityMapDrawingTool.clearPreview();
+    if (!hasUsableSize(points)) return;
+    await CityMapDrawingTool.createFeature(points);
   }
 
-  static async onRightDown(event) {
-    if (!this.isVertexTool()) return;
-    event?.stopPropagation?.();
-    await this.finishVertexDrawing();
+  static async onClick(event) {
+    if (!CityMapDrawingTool.isReadyForCanvasEvent(event)) return;
+    if (!CityMapDrawingTool.isVertexTool() || event.detail > 1) return;
+    CityMapDrawingTool.consumeCanvasEvent(event);
+    const point = getEventPoint(event);
+    CityMapDrawingTool.drawing ??= { points: [] };
+    CityMapDrawingTool.drawing.points.push(point);
+    CityMapDrawingTool.drawPreview(CityMapDrawingTool.drawing.points, CityMapDrawingTool.activeTool === CITY_MAP_TOOLS.LINE);
+  }
+
+  static async onDoubleClick(event) {
+    if (!CityMapDrawingTool.isReadyForCanvasEvent(event)) return;
+    if (!CityMapDrawingTool.isVertexTool()) return;
+    CityMapDrawingTool.consumeCanvasEvent(event);
+    await CityMapDrawingTool.finishVertexDrawing();
+  }
+
+  static async onContextMenu(event) {
+    if (!CityMapDrawingTool.isReadyForCanvasEvent(event, false)) return;
+    if (!CityMapDrawingTool.isVertexTool()) return;
+    CityMapDrawingTool.consumeCanvasEvent(event);
+    await CityMapDrawingTool.finishVertexDrawing();
   }
 
   static async finishVertexDrawing() {
@@ -463,6 +538,25 @@ class CityMapDrawingTool {
     this.drawing = null;
     this.clearPreview();
   }
+
+  static deactivate() {
+    this.activeTool = CITY_MAP_TOOLS.SELECT;
+    this.cancel();
+    this.detachListeners();
+  }
+
+  static isReadyForCanvasEvent(event, leftButtonOnly = true) {
+    if (!game.user.isGM || !isCityMapScene()) return false;
+    if (this.activeTool === CITY_MAP_TOOLS.SELECT) return false;
+    if (leftButtonOnly && event.button !== 0) return false;
+    return true;
+  }
+
+  static consumeCanvasEvent(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+  }
 }
 
 class CityMapOverlay {
@@ -473,6 +567,7 @@ class CityMapOverlay {
   static refresh() {
     if (!canvas?.stage || !canvas?.scene) return;
     this.clear();
+    if (!isCityMapScene()) return;
     this.container = new PIXI.Container();
     this.container.sortableChildren = true;
     this.container.zIndex = 750;
@@ -688,6 +783,18 @@ function clamp(value, min, max) {
 }
 
 function getEventPoint(event) {
+  if (Number.isFinite(event?.clientX) && Number.isFinite(event?.clientY)) {
+    const view = getCanvasView();
+    const rect = view?.getBoundingClientRect?.();
+    const screenPoint = new PIXI.Point(event.clientX - (rect?.left ?? 0), event.clientY - (rect?.top ?? 0));
+    const local = canvas.stage.toLocal(screenPoint);
+    return {
+      x: Math.round(local.x),
+      y: Math.round(local.y),
+      elevation: 0
+    };
+  }
+
   const local = event?.getLocalPosition?.(canvas.stage)
     ?? event?.data?.getLocalPosition?.(canvas.stage)
     ?? canvas.stage.toLocal(event?.global ?? event?.data?.global ?? { x: 0, y: 0 });
@@ -696,6 +803,10 @@ function getEventPoint(event) {
     y: Math.round(local.y),
     elevation: 0
   };
+}
+
+function getCanvasView() {
+  return canvas?.app?.canvas ?? canvas?.app?.view ?? document.querySelector("canvas#board");
 }
 
 function pointsForDragTool(tool, origin, destination) {

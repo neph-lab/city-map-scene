@@ -206,36 +206,65 @@ function makeDrawingControl(name, title, icon) {
 }
 
 function isCityMapScene(scene = canvas?.scene) {
-  return scene?.getFlag(MODULE_ID, FLAGS.IS_CITY_MAP) === true;
+  const value = scene?.getFlag(MODULE_ID, FLAGS.IS_CITY_MAP);
+  return value === true || value === "true";
 }
 
 function injectSceneConfigCityMapFlag(application, element) {
   const scene = application.document;
-  if (scene?.documentName !== "Scene" || element.querySelector(".city-map-scene-config-field")) return;
+  if (scene?.documentName !== "Scene" || element.querySelector('[data-tab="city-map-scene"]')) return;
 
-  const field = document.createElement("div");
-  field.className = "form-group city-map-scene-config-field";
-  field.innerHTML = `
-    <label>City Map Scene</label>
-    <div class="form-fields">
-      <input type="checkbox" name="flags.${MODULE_ID}.${FLAGS.IS_CITY_MAP}" value="true">
+  const tabNav = element.querySelector('nav.tabs[data-group="sheet"]')
+    ?? element.querySelector("nav.tabs")
+    ?? element.querySelector('[data-application-part="tabs"]');
+  const tabContent = element.querySelector('.tab[data-group="sheet"]')?.parentElement
+    ?? element.querySelector(".tab")?.parentElement
+    ?? element.querySelector("section");
+  if (!tabNav || !tabContent) return;
+
+  const navItem = document.createElement("a");
+  navItem.className = "item";
+  navItem.dataset.tab = "city-map-scene";
+  navItem.dataset.group = "sheet";
+  navItem.innerHTML = `<i class="fa-solid fa-map-location-dot"></i><span>City Map</span>`;
+  tabNav.append(navItem);
+
+  const tab = document.createElement("section");
+  tab.className = "tab city-map-scene-config-tab";
+  tab.dataset.tab = "city-map-scene";
+  tab.dataset.group = "sheet";
+  tab.innerHTML = `
+    <div class="form-group">
+      <label>City Map Scene</label>
+      <div class="form-fields">
+        <input type="checkbox" name="flags.${MODULE_ID}.${FLAGS.IS_CITY_MAP}" value="true">
+      </div>
+      <p class="hint">Enable City Map Scene controls and overlay data for this Scene.</p>
     </div>
-    <p class="hint">Enable City Map Scene controls and overlay data for this Scene.</p>
   `;
-  const checkbox = field.querySelector("input");
+  tabContent.append(tab);
+
+  const checkbox = tab.querySelector("input");
   checkbox.checked = isCityMapScene(scene);
 
-  const target = element.querySelector('[data-tab="basic"]')
-    ?? element.querySelector('[data-tab="basics"]')
-    ?? element.querySelector(".tab")
-    ?? element;
-  target.append(field);
+  navItem.addEventListener("click", (event) => {
+    event.preventDefault();
+    for (const item of tabNav.querySelectorAll(".item")) item.classList.toggle("active", item === navItem);
+    for (const sibling of tabContent.querySelectorAll('.tab[data-group="sheet"], .tab')) {
+      sibling.classList.toggle("active", sibling === tab);
+    }
+    try {
+      application.changeTab?.("city-map-scene", "sheet", { event, navElement: navItem, force: true });
+    } catch (_error) {
+      // SceneConfig does not know about module-injected tabs, so the DOM fallback above is authoritative.
+    }
+  });
 
-  const form = element.closest("form") ?? element.querySelector("form");
   checkbox.addEventListener("change", async () => {
     await scene.setFlag(MODULE_ID, FLAGS.IS_CITY_MAP, checkbox.checked);
     refreshSceneControls();
   });
+  const form = element.closest("form") ?? element.querySelector("form");
   form?.addEventListener("submit", async () => {
     await scene.setFlag(MODULE_ID, FLAGS.IS_CITY_MAP, checkbox.checked);
     refreshSceneControls();
